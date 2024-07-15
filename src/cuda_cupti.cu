@@ -24,7 +24,9 @@ if (cupti_result != CUPTI_SUCCESS) { \
 }
 
 void CUPTIAPI cuptiBufferRequested(uint8_t **buffer, size_t *size, size_t *maxNumRecords) {
-    *size = 16 * 1024;
+    // 16 MB; docs recommend 1 to 10 MB
+    //   this is a lot more than needed for this workload though
+    *size = 16 * 1024 * 1024;
     *buffer = (uint8_t*) malloc(*size);
     // 0 means CUPTI will return all records (but still won't overflow buffer)
     *maxNumRecords = 0;
@@ -41,12 +43,19 @@ void CUPTIAPI cuptiBufferCompleted(CUcontext ctx, uint32_t streamId, uint8_t *bu
         if (status == CUPTI_SUCCESS) {
             // Process record (kernel execution times, etc.)
             if (record->kind == CUPTI_ACTIVITY_KIND_KERNEL) {
-                CUpti_ActivityKernel4 *kernel = (CUpti_ActivityKernel4 *)record;
-                printf("Kernel execution: %s, grid size (%d,%d,%d), block size (%d,%d,%d), time %llu ns\n",
+                CUpti_ActivityKernel7 *kernel = (CUpti_ActivityKernel7 *)record;
+                printf("Kernel execution: %s; grid size (%d,%d,%d); block size (%d,%d,%d); time %llu ns\n",
                     kernel->name,
                     kernel->gridX, kernel->gridY, kernel->gridZ,
                     kernel->blockX, kernel->blockY, kernel->blockZ,
                     (unsigned long long)(kernel->end - kernel->start));
+                printf("                  registers per thread  %d\n", kernel->registersPerThread);
+                printf("                  static shared memory  %d bytes\n", kernel->staticSharedMemory);
+                printf("                  dynamic shared memory %d bytes\n", kernel->dynamicSharedMemory);
+                printf("                  local memory per thread %u bytes\n", kernel->localMemoryPerThread);
+            }
+            else {
+                printf("Record of type %d (not unpacking)\n", record->kind);
             }
         } else if (status == CUPTI_ERROR_MAX_LIMIT_REACHED) {
             break;
