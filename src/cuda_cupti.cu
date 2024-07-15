@@ -5,6 +5,7 @@
 using std::cout;
 using std::cerr;
 
+// wrapper macro for CUDA API calls
 #define CUDA_ERR_SAFE(cuda_call) { \
 cudaError_t cuda_error_code = (cuda_call); \
 if (cudaSuccess != cuda_error_code) { \
@@ -13,6 +14,7 @@ if (cudaSuccess != cuda_error_code) { \
 } \
 }
 
+// wrapper macro for CUPTI API calls
 #define CUPTI_ERR_SAFE(cupti_call) { \
 CUptiResult cupti_result = (cupti_call); \
 if (cupti_result != CUPTI_SUCCESS) { \
@@ -23,6 +25,7 @@ if (cupti_result != CUPTI_SUCCESS) { \
 } \
 }
 
+// callback for CUPTI to request a buffer to populate with the requested activity records
 void CUPTIAPI cuptiBufferRequested(uint8_t **buffer, size_t *size, size_t *maxNumRecords) {
     // 16 MB; docs recommend 1 to 10 MB
     //   this is a lot more than needed for this workload though
@@ -32,6 +35,8 @@ void CUPTIAPI cuptiBufferRequested(uint8_t **buffer, size_t *size, size_t *maxNu
     *maxNumRecords = 0;
 }
 
+// callback for CUPTI to invoke when activity recording is complete
+//  - enumerates and ouputs the activity records
 void CUPTIAPI cuptiBufferCompleted(CUcontext ctx, uint32_t streamId, uint8_t *buffer, size_t size, size_t validSize) {
     CUptiResult status;
     CUpti_Activity *record = NULL;
@@ -54,6 +59,14 @@ void CUPTIAPI cuptiBufferCompleted(CUcontext ctx, uint32_t streamId, uint8_t *bu
                 printf("                  dynamic shared memory %d bytes\n", kernel->dynamicSharedMemory);
                 printf("                  local memory per thread %u bytes\n", kernel->localMemoryPerThread);
             }
+            else if (record->kind == CUPTI_ACTIVITY_KIND_SHARED_ACCESS) {
+                CUpti_ActivitySharedAccess *sharedAccess = (CUpti_ActivitySharedAccess *)record;
+                printf("Shared access: number of shared transactions %lu\n", sharedAccess->sharedTransactions);
+            }
+            else if (record->kind == CUPTI_ACTIVITY_KIND_FUNCTION) {
+                CUpti_ActivityModule *module = (CUpti_ActivityModule *)record;
+                printf("Function activity: module id %u\n", module->contextId);
+            }
             else {
                 printf("Record of type %d (not unpacking)\n", record->kind);
             }
@@ -67,6 +80,8 @@ void CUPTIAPI cuptiBufferCompleted(CUcontext ctx, uint32_t streamId, uint8_t *bu
     } while (1);
 }
 
+// trivial kernel to invoke to warm up a CUDA device; called before profiling
+//   to ensure initialization activities/times don't affect profiling
 __global__ void warm_up() {
     // this is not used as an index here, but this is how we would calculate the
     //   index into the data for a one-dimensional array
@@ -76,6 +91,7 @@ __global__ void warm_up() {
     x1 = x1 + (double) index * x2 + (double) threadIdx.x;
 }
 
+// simple kernel to run the standard calculation on a single point
 __global__ void calculate(double *points, size_t num_points) {
     const unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < num_points) {
@@ -83,6 +99,10 @@ __global__ void calculate(double *points, size_t num_points) {
     }
 }
 
+// kernel to run the standard calculation on a single point but with stepping--all
+//   points get calculated but the threads in a block will calculate points separated
+//   by the step count instead of consecutive points (pass in a step count of 1 to
+//   have the same behavior as the plain calculate kernel)
 __global__ void calculate_with_step(double *points, size_t step_size, size_t num_points) {
     const unsigned int offset = blockIdx.x % step_size;
     const unsigned int span_num = (blockIdx.x / step_size) * step_size * blockDim.x;
@@ -92,6 +112,9 @@ __global__ void calculate_with_step(double *points, size_t step_size, size_t num
     }
 }
 
+// kernel to run the standard calculation on a single point but with stepping, and
+//   copying the data to shared memory
+//  - extra, meaningless calculation steps added to up the number of clock cycles
 __global__ void calculate_with_step_shared_mem(double *points, size_t step_size, size_t num_points) {
     extern __shared__ double shared_data[];
     const unsigned int offset = blockIdx.x % step_size;
@@ -118,6 +141,8 @@ __global__ void calculate_with_step_shared_mem(double *points, size_t step_size,
     }
 }
 
+// Debug function to output the points data; used to diagnose mismatches
+//   is expected and actual calculation outcomes
 void data_dump(double *points, size_t num_points) {
     for (size_t index = 0; index < num_points; ++index) {
         if (0 == index % 10) {
@@ -141,6 +166,7 @@ bool doubles_within_tolerance(const double x, const double y) {
     return diff < tolerance * maxd;
 }
 
+// enumerate devices and output some useful properties
 void devices_info(size_t total_data_bytes) {
     int cuda_dev_count;
     CUDA_ERR_SAFE( cudaGetDeviceCount(&cuda_dev_count) );
@@ -180,6 +206,9 @@ void devices_info(size_t total_data_bytes) {
     }
 }
 
+// execute kernels on the specific device
+//  - profiles with CUPTI
+//  - checks the data output to ensure every point was properly calculated
 void run_calculations(size_t num_points, size_t block_size, size_t step_size, int dev_num) {
     CUDA_ERR_SAFE( cudaSetDevice(dev_num) );
     size_t num_blocks = (num_points + block_size - 1) / block_size;
@@ -203,6 +232,7 @@ void run_calculations(size_t num_points, size_t block_size, size_t step_size, in
     CUDA_ERR_SAFE( cudaMemcpy(device_data, host_data, num_point_bytes, cudaMemcpyHostToDevice) );
 
     CUPTI_ERR_SAFE( cuptiActivityEnable(CUPTI_ACTIVITY_KIND_KERNEL) );
+    CUPTI_ERR_SAFE( cuptiActivityEnable(CUPTI_ACTIVITY_KIND_SHARED_ACCESS) );
     CUPTI_ERR_SAFE( cuptiActivityRegisterCallbacks(cuptiBufferRequested, cuptiBufferCompleted) );
 
     CUDA_ERR_SAFE( cudaGetLastError() );
