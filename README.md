@@ -108,3 +108,16 @@ There's not a lot of *fine* detail here but you can see that block sizes work be
 Also interesting is that execution time is very similar across all instances for sets of 32, 64 and 1024 data points. This suggests that with these smaller data sets the overhead of invoking the kernels in the first place dominates the total execution time. With the larger sets the execution time is noticable larger, as is the time variance between block sizes.
 
 Note that these executions were all with a step size of 1; in other words, not actively trying to cause shared memory bank conflicts.
+
+## Takeaways
+
+The purpose of this project was to expand my CUDA understanding and to get some initial experience with profiling the GPU with CUPTI.
+
+Certainly there's a lot of interesting information to gain just from the basic device information and activity profiling.
+
+Here are some things I learned in the process:
+* The scope of CUPTI is *vast*; it's easy to get lost in the [documentation](https://docs.nvidia.com/cupti/)
+* It's suprisingly difficult to figure out how to get a metric for shared memory bank conflicts from reading the docs, or to find example code (with the caveat that, as always, it could just be me)
+* The GUIs, NSight Systems and NSight Compute, would likely mine a lot of information with less work than programming straight to the API; however those applications, and their command line alter egos, don't operate in any of the virtualized environments in which I tried them (WSL2 Ubuntu, Docker Desktop Ubuntu, VMWare Workstation)
+* Porting CUDA and CUPTI code to Windows was a no-go; I invested a few hours before deciding the time investment was too great; be happy to be on Linux, where things just work!
+
