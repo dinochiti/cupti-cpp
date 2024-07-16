@@ -46,7 +46,50 @@ The data calculations done in the kernel were meaningless but they were determin
 
 All that's left is to clean up the allocated memory (both device and host) and reset the device.
 
-## Metrics
+## Single-run Metrics
+
+Here's a complete output example:
+
+```
+device number: 0
+device name: NVIDIA GeForce RTX 3050 Ti Laptop GPU
+total global memory: 4294508544
+memory bus width: 128
+clock rate: 1223000
+multiprocessor count: 20
+max threads per multiprocessor: 1536
+registers per multiprocessor: 65536
+warp size: 32
+registers per block: 65536
+shared memory per block: 49152
+max dimension size of a grid (x, y, z): 2147483647, 65535, 65535
+max dimension size of a thread block (x, y, z): 1024, 1024, 64
+concurrent kernels: 1
+local L1 cache supported: yes
+
+Running calculations on device 0
+  Points:     1024
+  Block size: 32
+  Step size:  1
+Allocating and initializing 1024 doubles
+Running 32 blocks of size 32 with step size 1
+CUPTI buffer completed
+Kernel execution: _Z30calculate_with_step_shared_memPdmm; grid size (32,1,1); block size (32,1,1); time 6080 ns
+                  registers per thread  24
+                  static shared memory  0 bytes
+                  dynamic shared memory 256 bytes
+                  local memory per thread 0 bytes
+Function activity: module id 1
+Shared access: number of shared transactions 64
+```
+
+There's a lot of interesting information in the device enumeration.
+
+The kernel activity information gives some detailed insight into how resources were used in the kernel execution. It verifies that we used the expected block size, and confirms that the grid size is calculated relative to block size. In this example, 32 grids times 32 blocks results in 1024 threads--the number necessary for each thread to run the calculations for one data point.
+
+My approach did not successfully trigger any shared memory conflicts that I could detect. I need to dig into more detail in the layout of the shared data space, or alternatively I could create another variation of the kernel that explicitly deploys a conflicting access pattern but gives up post-calculation correctness in the output data.
+
+## Aggregate Metrics
 
 Can any performance insights be inferred from the project so far?
 
@@ -62,6 +105,6 @@ Using the [`manyruns.py`](manyruns.py) Python script to invoke multiple variants
 
 There's not a lot of *fine* detail here but you can see that block sizes work best when they are not too big and not too small. Further tuning for individual use cases might prove productive.
 
-Also interesting is that execution time is very similar across all instances for sets of 32, 64 and 1024 data points. This suggests that with these smaller data sets the overhead of invoking the kernels in the first place dominates the total execution time. With the larger sets the execution time is noticable larger, as is the time variance between blak sizes.
+Also interesting is that execution time is very similar across all instances for sets of 32, 64 and 1024 data points. This suggests that with these smaller data sets the overhead of invoking the kernels in the first place dominates the total execution time. With the larger sets the execution time is noticable larger, as is the time variance between block sizes.
 
 Note that these executions were all with a step size of 1; in other words, not actively trying to cause shared memory bank conflicts.
