@@ -42,7 +42,6 @@ void CUPTIAPI cuptiBufferCompleted(CUcontext ctx, uint32_t streamId, uint8_t *bu
     CUpti_Activity *record = NULL;
 
     cout << "CUPTI buffer completed\n";
-
     do {
         status = cuptiActivityGetNextRecord(buffer, validSize, &record);
         if (status == CUPTI_SUCCESS) {
@@ -78,6 +77,7 @@ void CUPTIAPI cuptiBufferCompleted(CUcontext ctx, uint32_t streamId, uint8_t *bu
             CUPTI_ERR_SAFE( status );
         }
     } while (1);
+    free(buffer);
 }
 
 // trivial kernel to invoke to warm up a CUDA device; called before profiling
